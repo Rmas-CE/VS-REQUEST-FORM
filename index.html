@@ -57,7 +57,7 @@ input,select{font-family:var(--font-ui);}
 .result-note{font-size:11.5px;color:var(--ink-faint);margin-bottom:10px;text-align:center;}
 
 .product-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
-.product-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;}
+.product-card{content-visibility:auto;contain-intrinsic-size:auto 300px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);display:flex;flex-direction:column;}
 .product-img{width:100%;aspect-ratio:1/1;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
 .product-img img{width:100%;height:100%;object-fit:contain;background:#fff;opacity:0;transition:opacity .25s;}
 .product-img img.loaded{opacity:1;}
@@ -271,7 +271,8 @@ async function apiPost(action, payload){
 const WAREHOUSE_REGION = {"PT NGMA":"NGMA","AMII SGMA":"SGMA","PT MANGALDAN":"NORTH LUZON","PT DAGUPAN":"NORTH LUZON","PT PAMPANGA":"CENTRAL LUZON","AMII DASMA":"SOUTH LUZON","AMII BATANGAS":"SOUTH LUZON","AMII NAGA":"SOUTH LUZON","AMII SOUTH MINDANAO":"SOUTH MINDANAO","AMII NORTH MINDANAO":"NORTH MINDANAO","PT CEBU":"CENTRAL VISAYAS","PT ILOILO":"WESTERN VISAYAS"};
 const WAREHOUSES = Object.keys(WAREHOUSE_REGION).map(name=>({id:name, name, region:WAREHOUSE_REGION[name]}));
 const REGIONS = [...new Set(Object.values(WAREHOUSE_REGION))].sort();
-const BU_LABELS = {AC:'Air Conditioner', AV:'AV / TV / Audio', HA:'Home Appliances'};
+const BU_LABELS = {AV:'AV / TV / Audio', HA:'Home Appliances', AC:'Air Conditioner'};
+const BU_ORDER = ['AV','HA','AC'];   // BU selector shows exactly these, in this order
 const BU_PALETTE = ['#15239E','#7B3FE4','#0A87C4','#B4780F','#1B8A5A','#C43B3B','#0D1970','#8C4B2A'];
 function buLabel(bu){ return BU_LABELS[bu] || bu; }
 function buColor(bu){
@@ -291,11 +292,13 @@ let STORES_BY_TS = new Map();  // tsName -> [store, ...] sorted
 const imageCache = {};         // code -> dataUrl, or null when the server has no picture
 const imageInFlight = new Set();
 let cart = [];                 // [{code, qty}]
-let currentBU = 'all', searchQuery = '';
+let currentBU = 'AV', searchQuery = '';
 let selectedRegion = null, selectedWarehouseId = null, selectedTs = null, selectedStore = null;
 let selectedPurpose = null, purposeOtherText = '';
 let filterBarWired = false;
-const GRID_CAP = 40, STORE_RESULT_CAP = 40;
+const STORE_RESULT_CAP = 40;
+const AUTO_REFRESH_MS = 120000;   // re-check stock every 2 min while the form is open
+let lastLoadAt = 0, dataSig = '';
 const PURPOSE_OPTIONS = ['Store Deployment', 'Store Opening and Reopening', 'Caravan', 'Exhibit', 'Others'];
 
 function qtyFor(whId, code){ return STOCK.get(whId+'|'+code) || 0; }
@@ -316,6 +319,10 @@ async function loadFormData(){
   STORES_BY_TS = new Map();
   STORE_LIST.forEach(s=>{ const n = tsName.get(s.tsId); if(!n) return; if(!STORES_BY_TS.has(n)) STORES_BY_TS.set(n, []); STORES_BY_TS.get(n).push(s); });
   STORES_BY_TS.forEach(list=>list.sort((a,b)=>a.name.localeCompare(b.name)));
+  lastLoadAt = Date.now();
+  const sig = POSM.map(p=>p.code).join(',') + '|' + [...STOCK].map(([k,v])=>k+'='+v).join(',');
+  const changed = sig !== dataSig; dataSig = sig;
+  return changed;
 }
 
 /* Images load in the background; each code is asked for at most once. */
@@ -328,8 +335,9 @@ function applyImage(code, src){
   });
 }
 async function loadImagesFor(codes){
-  const need = [...new Set(codes)].filter(c => !(c in imageCache) && !imageInFlight.has(c)).slice(0,60);
+  const need = [...new Set(codes)].filter(c => !(c in imageCache) && !imageInFlight.has(c));
   if(!need.length) return;
+  if(need.length > 40){ for(let i=0;i<need.length;i+=40) loadImagesFor(need.slice(i,i+40)); return; }
   need.forEach(c=>imageInFlight.add(c));
   try{
     const data = await apiGet({action:'getImages', codes: need.join(',')});
@@ -339,6 +347,13 @@ async function loadImagesFor(codes){
   finally{ need.forEach(c=>imageInFlight.delete(c)); }
 }
 const loadImagesSoon = debounce(loadImagesFor, 250);
+/* Only cards that are on (or near) the screen ask for their picture. */
+const imgQueue = new Set();
+const flushImgQueue = debounce(()=>{ const c = [...imgQueue]; imgQueue.clear(); loadImagesFor(c); }, 120);
+const cardObserver = ('IntersectionObserver' in window) ? new IntersectionObserver(entries=>{
+  entries.forEach(e=>{ if(e.isIntersecting){ cardObserver.unobserve(e.target); imgQueue.add(e.target.dataset.code); } });
+  if(imgQueue.size) flushImgQueue();
+}, {rootMargin:'400px 0px'}) : null;
 
 /* ============================= CART HELPERS ============================= */
 function cartQtyFor(code){ const it = cart.find(c=>c.code===code); return it ? it.qty : 0; }
@@ -366,7 +381,7 @@ function purposeText(){
 function matchingPosm(){
   const q = searchQuery.trim().toLowerCase();
   // Only POSM with stock at the selected warehouse are listed.
-  return POSM.filter(p => (currentBU==='all' || p.bu===currentBU) && (!q || p._q.includes(q)) && qtyFor(selectedWarehouseId, p.code) > 0);
+  return POSM.filter(p => p.bu===currentBU && (!q || p._q.includes(q)) && qtyFor(selectedWarehouseId, p.code) > 0);
 }
 function fillSelect(sel, placeholder, values, current){
   sel.innerHTML = `<option value="">${placeholder}</option>` + values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
@@ -402,7 +417,7 @@ function renderFilterBar(){
   fillSelect($('purposeSelect'), '— Select Purpose —', PURPOSE_OPTIONS, selectedPurpose);
   $('purposeOtherWrap').style.display = selectedPurpose==='Others' ? '' : 'none';
   $('purposeOtherInput').value = purposeOtherText;
-  $('buChips').innerHTML = ['all', ...Object.keys(BU_LABELS)].map(bu=>`<button class="bu-chip ${bu===currentBU?'active':''}" data-bu="${bu}">${bu==='all'?'All':esc(buLabel(bu))}</button>`).join('');
+  $('buChips').innerHTML = BU_ORDER.map(bu=>`<button class="bu-chip ${bu===currentBU?'active':''}" data-bu="${bu}" title="${esc(buLabel(bu))}">${bu}</button>`).join('');
   $('searchInput').value = searchQuery;
   if(filterBarWired) return;   // listeners are attached once only
   filterBarWired = true;
@@ -485,7 +500,7 @@ function updateCardButton(card){
   btn.textContent = inCart ? `In Cart (${inCart}) · Add more` : '+ Add to Cart';
 }
 
-function renderBrowse(){
+function renderBrowse(keepScroll){
   const box = $('browseContent');
   if(!selectedRegion || !selectedWarehouseId){
     box.innerHTML = `<div class="empty-state">📍 Please select a Region and Warehouse above to see available POSM.</div>`;
@@ -496,10 +511,10 @@ function renderBrowse(){
     box.innerHTML = `<div class="empty-state">No matching POSM here (or no stock at this warehouse). Try a different filter or search term.</div>`;
     return;
   }
-  const shown = all.slice(0, GRID_CAP);
+  const scrollY = window.scrollY;
   box.innerHTML = `
-    ${all.length > GRID_CAP ? `<div class="result-note">Showing the first ${GRID_CAP} of ${all.length} — search to narrow it down further.</div>` : ''}
-    <div class="product-grid">${shown.map(p=>{
+    <div class="result-note">${all.length.toLocaleString()} ${plural(all.length,'POSM','POSM')} with stock at ${esc(selectedWarehouseId)} · ${esc(currentBU)}</div>
+    <div class="product-grid">${all.map(p=>{
       const avail = qtyFor(selectedWarehouseId, p.code), inCart = cartQtyFor(p.code), img = imageCache[p.code];
       return `<div class="product-card" data-code="${esc(p.code)}">
         <div class="product-img">
@@ -519,7 +534,10 @@ function renderBrowse(){
         </div>
       </div>`;
     }).join('')}</div>`;
-  loadImagesSoon(shown.map(p=>p.code));
+  if(keepScroll) window.scrollTo(0, scrollY);
+  const cards = box.querySelectorAll('.product-card');
+  if(cardObserver){ cardObserver.disconnect(); cards.forEach(c=>{ if(!(c.dataset.code in imageCache)) cardObserver.observe(c); }); }
+  else loadImagesSoon(all.map(p=>p.code));
 }
 
 /* ============================= CART VIEW ============================= */
@@ -667,6 +685,22 @@ async function boot(){
     renderError(e.message || 'Could not reach the server.');
   }
 }
+/* Keep stock in step with the Inventory Tool: reload when the phone comes back to this
+   page and every 2 minutes while it is open. The grid is redrawn only if something changed. */
+let refreshing = false;
+async function refreshStock(){
+  if(refreshing || !POSM.length || document.hidden) return;
+  if(!$('filterBar') || $('filterBar').style.display === 'none') return;   // success screen
+  refreshing = true; setSyncDot('var(--warning)');
+  try{
+    const changed = await loadFormData();
+    setSyncDot('var(--success)');
+    if(changed){ renderBrowse(true); refreshCheckoutIfOpen(); }
+  }catch(e){ setSyncDot('var(--danger)'); }
+  finally{ refreshing = false; }
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && Date.now() - lastLoadAt > 20000) refreshStock(); });
+setInterval(refreshStock, AUTO_REFRESH_MS);
 boot();
 </script>
 <div id="proofHost" hidden></div>
