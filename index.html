@@ -67,6 +67,7 @@ input,select{font-family:var(--font-ui);}
 .product-body{padding:9px 10px 10px;display:flex;flex-direction:column;gap:4px;flex:1;}
 .product-code{font-weight:700;font-size:12.5px;}
 .product-desc{font-size:11px;color:var(--ink-soft);line-height:1.3;min-height:2.2em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.product-model{font-size:10.8px;font-weight:600;color:var(--primary-ink);line-height:1.3;}
 .product-avail{font-size:10.5px;color:var(--ink-faint);margin-top:auto;}
 .add-cart-btn{margin-top:6px;width:100%;border:1.5px solid var(--primary);background:var(--primary-tint);color:var(--primary-ink);border-radius:var(--radius-sm);padding:8px;font-size:12px;font-weight:700;}
 .add-cart-btn.in-cart{background:var(--primary);color:#fff;}
@@ -193,7 +194,7 @@ h1,h2,h3{font-family:var(--font-display);}
       <input type="text" id="purposeOtherInput" placeholder="Please specify the purpose...">
     </div>
     <div class="bu-chips" id="buChips"></div>
-    <div class="search-row"><input type="text" id="searchInput" placeholder="Search by POSM code or name..." autocomplete="off"></div>
+    <div class="search-row"><input type="text" id="searchInput" placeholder="Search by POSM code, name or model..." autocomplete="off"></div>
   </div>
   <div id="browseContent">
     <div class="loading-wrap">
@@ -309,7 +310,7 @@ function storesForTs(tsName){ return STORES_BY_TS.get(tsName) || []; }
 async function loadFormData(){
   const data = await apiGet({action:'getFormData'});
   POSM = (data.posmMaster||[]).filter(p=>p.status==='active');
-  POSM.forEach(p=>{ p._q = (p.code+' '+(p.desc||'')).toLowerCase(); });
+  POSM.forEach(p=>{ p.model = String(p.model==null?'':p.model).trim(); p._q = (p.code+' '+(p.desc||'')+' '+p.model).toLowerCase(); });
   POSM_BY_CODE = new Map(POSM.map(p=>[p.code, p]));
   STOCK = new Map();
   (data.inventory||[]).forEach(r=>{ const k = r.warehouseId+'|'+r.posmCode; STOCK.set(k, (STOCK.get(k)||0) + (Number(r.qty)||0)); });
@@ -524,6 +525,7 @@ function renderBrowse(keepScroll){
         <div class="product-body">
           <div class="product-code">${esc(p.code)}</div>
           <div class="product-desc">${esc(p.desc)}</div>
+          ${p.model ? `<div class="product-model">Model: ${esc(p.model)}</div>` : ''}
           <div class="product-avail">Available: ${avail.toLocaleString()}</div>
           <div class="card-qty-row"><div class="qty-stepper sm">
             <button type="button" data-step="-1" aria-label="Less">&minus;</button>
@@ -566,7 +568,7 @@ function renderCart(){
         </div>
         <div class="info">
           <div class="code">${esc(item.code)}</div>
-          <div class="desc">${esc(p?p.desc:'')} · avail: ${avail}</div>
+          <div class="desc">${esc(p?p.desc:'')}${p&&p.model?' · '+esc(p.model):''} · avail: ${avail}</div>
           ${over ? `<div class="desc" style="color:var(--danger);font-weight:700;">Only ${avail} at this warehouse — lower the qty or remove</div>` : ''}
         </div>
         <div class="qty-stepper">
@@ -643,7 +645,7 @@ function renderSuccess(order){
       <h2>${n} ${plural(n,'item')} submitted!</h2>
       <p>Your ${n===1?'request is':'requests are'} now in "For Sorting" in the Inventory tool.</p>
       <div class="success-summary">
-        ${order.items.map(it=>{ const p = posmByCode(it.posmCode); return `<div class="row"><span>${esc(it.posmCode)} — ${esc(p?p.desc:'')}</span><b>${it.qty}</b></div>`; }).join('')}
+        ${order.items.map(it=>{ const p = posmByCode(it.posmCode); return `<div class="row"><span>${esc(it.posmCode)} — ${esc(p?p.desc:'')}${p&&p.model?' ('+esc(p.model)+')':''}</span><b>${it.qty}</b></div>`; }).join('')}
       </div>
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:18px;text-align:left;">
         <b>Store:</b> ${esc(order.store)}<br><b>Trade Supervisor:</b> ${esc(order.ts)}<br><b>Warehouse:</b> ${esc(order.warehouseId)}<br><b>Purpose:</b> ${esc(order.purpose)}
