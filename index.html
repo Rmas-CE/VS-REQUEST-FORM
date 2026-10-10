@@ -558,7 +558,7 @@ function renderBrowse(keepScroll){
           <div class="product-code">${esc(p.code)}</div>
           <div class="product-desc">${esc(p.desc)}</div>
           ${p.model ? `<div class="product-model">Model: ${esc(p.model)}</div>` : ''}
-          <div class="product-avail">Available: ${avail.toLocaleString()}</div>
+          <div class="product-avail">Available to request: ${avail.toLocaleString()}</div>
           <div class="card-qty-row"><div class="qty-stepper sm">
             <button type="button" data-step="-1" aria-label="Less">&minus;</button>
             <input type="number" inputmode="numeric" min="1" max="${avail}" value="1" data-cardqty aria-label="Quantity">
@@ -658,6 +658,13 @@ $('cartSubmitBtn').addEventListener('click', async ()=>{
     await apiPost('newRequestBatch', Object.assign({dateCreated: created, dueDate: addDays(created,5), createdBy: order.ts}, order));
     renderSuccess(order);
   }catch(e){
+    if(/not enough stock left/i.test(e.message)){
+      // Another Trade Supervisor requested first — reload what is still free and show it in the cart.
+      try{ await loadFormData(); renderBrowse(true); renderCart(); }catch(_){}
+      updateCheckoutState();
+      alert(e.message + '\n\nThe cart now shows what is still available.');
+      return;
+    }
     updateCheckoutState();
     alert(isKeyError(e.message)
       ? 'This Request Form link is out of date. Please open the latest link from your Admin (it ends with ?key=…) and submit again.'
