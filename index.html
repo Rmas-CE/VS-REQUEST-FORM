@@ -479,7 +479,6 @@ function renderFilterBar(){
   $('purposeSelect').addEventListener('change', e=>{
     selectedPurpose = e.target.value || null;
     $('purposeOtherWrap').style.display = selectedPurpose==='Others' ? '' : 'none';
-    syncOpeningNote();
   });
   $('purposeOtherInput').addEventListener('input', e=>{ purposeOtherText = e.target.value; });
   $('buChips').addEventListener('click', e=>{
@@ -651,12 +650,12 @@ function checkoutProblem(){
   if(!selectedPurpose || (selectedPurpose==='Others' && !purposeOtherText.trim())) return 'Please select a purpose.';
   return '';
 }
+// Store Opening / Reopening lead-time note: always on screen once the form is loaded.
 function syncOpeningNote(){
   const n = $('openingNote'); if(!n) return;
-  const on = selectedPurpose==='Store Opening and Reopening';
-  n.style.display = on ? '' : 'none';
-  document.body.classList.toggle('has-lead-note', on);
-  if(on) document.body.style.setProperty('--lead-h', n.offsetHeight + 'px');
+  n.style.display = '';
+  document.body.classList.add('has-lead-note');
+  document.body.style.setProperty('--lead-h', n.offsetHeight + 'px');
 }
 function updateCheckoutState(){
   const btn = $('cartSubmitBtn'), problem = checkoutProblem();
