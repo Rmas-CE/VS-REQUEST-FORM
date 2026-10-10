@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "VaultSync Request & Proof",
+  "short_name": "VS Request",
+  "description": "Request POSM and upload proof of deployment — for Trade Supervisors.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3F4F6",
+  "theme_color": "#0B1B5C",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Proof of Deployment", "short_name": "Proof", "url": "./#proof", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
