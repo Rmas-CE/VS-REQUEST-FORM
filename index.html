@@ -58,6 +58,12 @@ input,select{font-family:var(--font-ui);}
 .search-row input:focus{outline:none;border-color:var(--primary);}
 #purposeOtherWrap input{width:100%;border:1.5px solid var(--line);background:var(--surface-alt);color:var(--ink);border-radius:var(--radius-sm);padding:9px 10px;font-size:13px;}
 #purposeOtherWrap input:focus{outline:none;border-color:var(--primary);}
+.lead-note{position:fixed;left:0;right:0;bottom:0;z-index:29;max-width:520px;margin:0 auto;display:flex;gap:10px;align-items:flex-start;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:#FFF4DE;border-top:1px solid #F3D9A4;box-shadow:0 -4px 14px rgba(90,61,0,.10);color:#5A3D00;font-size:12px;line-height:1.45;}
+.lead-note .ln-ico{font-size:18px;line-height:1.2;flex:none;}
+.lead-note b{font-weight:700;}
+.lead-note span{color:#7A5A1A;font-size:11px;}
+body.has-lead-note .cart-fab{bottom:calc(var(--lead-h,84px) + 12px);}
+body.has-lead-note{padding-bottom:var(--lead-h,84px);}
 
 
 #browseContent{flex:1;padding:14px 14px 100px;}
@@ -233,6 +239,12 @@ h1,h2,h3{font-family:var(--font-display);}
       <div style="color:var(--ink-faint);font-size:13px;">Loading data...</div>
     </div>
   </div>
+<div class="lead-note" id="openingNote" style="display:none;" role="note">
+  <div class="ln-ico">📅</div>
+  <div class="ln-txt"><b>Store Opening / Reopening — request early</b>
+    <div>• <b>Near</b> the warehouse: at least <b>1 week</b> before opening<br>• <b>Far</b> from the warehouse: at least <b>2 weeks</b> before opening</div>
+    <span>This gives RMAS enough time to prepare and deliver the POSM.</span></div>
+</div>
   <button class="cart-fab hidden" id="cartFab">🛒 <span id="cartFabLabel">Cart</span> <span class="badge" id="cartBadge">0</span></button>
 </div>
 
@@ -449,6 +461,7 @@ function renderFilterBar(){
   repopulateWarehouse(); repopulateTs(); resetStorePicker();
   fillSelect($('purposeSelect'), '— Select Purpose —', PURPOSE_OPTIONS, selectedPurpose);
   $('purposeOtherWrap').style.display = selectedPurpose==='Others' ? '' : 'none';
+  syncOpeningNote();
   $('purposeOtherInput').value = purposeOtherText;
   $('buChips').innerHTML = BU_ORDER.map(bu=>`<button class="bu-chip ${bu===currentBU?'active':''}" data-bu="${bu}" title="${esc(buLabel(bu))}">${bu}</button>`).join('');
   $('searchInput').value = searchQuery;
@@ -466,6 +479,7 @@ function renderFilterBar(){
   $('purposeSelect').addEventListener('change', e=>{
     selectedPurpose = e.target.value || null;
     $('purposeOtherWrap').style.display = selectedPurpose==='Others' ? '' : 'none';
+    syncOpeningNote();
   });
   $('purposeOtherInput').addEventListener('input', e=>{ purposeOtherText = e.target.value; });
   $('buChips').addEventListener('click', e=>{
@@ -636,6 +650,13 @@ function checkoutProblem(){
   if(!selectedTs || !selectedStore) return 'Please select a TS and a store.';
   if(!selectedPurpose || (selectedPurpose==='Others' && !purposeOtherText.trim())) return 'Please select a purpose.';
   return '';
+}
+function syncOpeningNote(){
+  const n = $('openingNote'); if(!n) return;
+  const on = selectedPurpose==='Store Opening and Reopening';
+  n.style.display = on ? '' : 'none';
+  document.body.classList.toggle('has-lead-note', on);
+  if(on) document.body.style.setProperty('--lead-h', n.offsetHeight + 'px');
 }
 function updateCheckoutState(){
   const btn = $('cartSubmitBtn'), problem = checkoutProblem();
