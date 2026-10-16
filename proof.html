@@ -195,6 +195,15 @@ function pkReadExif(buf){
   }catch(e){}
   return out;
 }
+// Real-time photos only: the photo must have been taken just now with the camera (no old / gallery photos).
+const PK_LIVE_MIN = 10;
+const PK_MAX_PHOTOS = Infinity; // no limit on proof photos per upload
+function pkCheckLive(info){
+  const now = Date.now(), lim = PK_LIVE_MIN*60000, lm = Number(info.lastModified)||0;
+  let t = 0; if(info.takenAt){ const d = new Date(String(info.takenAt)); if(!isNaN(d)) t = d.getTime(); }
+  if((lm && now - lm > lim) || (t && now - t > lim))
+    throw new Error('Real-time photo only — this photo was not taken just now. Please tap "Take photo" and take a new picture at the store.');
+}
 // Keep each photo small in memory (max 1400px) so TS can take many photos without the phone running out of memory.
 async function pkShrink(bmp){
   const W = bmp.width||bmp.naturalWidth, H = bmp.height||bmp.naturalHeight, s = Math.min(1, 1400/Math.max(W,H));
@@ -225,15 +234,6 @@ function pkFmtStamp(d){
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 // Reads a picked file once (fingerprints + camera date + preview).
-// Real-time photos only: the photo must have been taken just now with the camera (no old / gallery photos).
-const PK_LIVE_MIN = 10;
-const PK_MAX_PHOTOS = Infinity; // no limit on proof photos per upload
-function pkCheckLive(info){
-  const now = Date.now(), lim = PK_LIVE_MIN*60000, lm = Number(info.lastModified)||0;
-  let t = 0; if(info.takenAt){ const d = new Date(String(info.takenAt)); if(!isNaN(d)) t = d.getTime(); }
-  if((lm && now - lm > lim) || (t && now - t > lim))
-    throw new Error('Real-time photo only — this photo was not taken just now. Please tap "Take photo" and take a new picture at the store.');
-}
 async function pkInspect(file){
   const buf = await file.arrayBuffer();
   const hash = await pkSha256(buf);
@@ -443,7 +443,6 @@ async function addPhoto(file, gallery){
     const info = await pkInspect(file);
     info.gallery = gallery;
     pkCheckLive(info);
-    if(upload.infos.length >= PK_MAX_PHOTOS) throw new Error('Maximum of '+PK_MAX_PHOTOS+' photos only.');
     if(upload.infos.some(x=>x.hash===info.hash)) throw new Error('You already added this same photo.');
     upload.infos.push(info); renderUpload();
   }catch(e){

@@ -58,6 +58,12 @@ input,select{font-family:var(--font-ui);}
 .search-row input:focus{outline:none;border-color:var(--primary);}
 #purposeOtherWrap input{width:100%;border:1.5px solid var(--line);background:var(--surface-alt);color:var(--ink);border-radius:var(--radius-sm);padding:9px 10px;font-size:13px;}
 #purposeOtherWrap input:focus{outline:none;border-color:var(--primary);}
+.lead-note{position:fixed;left:0;right:0;bottom:0;z-index:29;max-width:520px;margin:0 auto;display:flex;gap:10px;align-items:flex-start;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:#FFF4DE;border-top:1px solid #F3D9A4;box-shadow:0 -4px 14px rgba(90,61,0,.10);color:#5A3D00;font-size:12px;line-height:1.45;}
+.lead-note .ln-ico{font-size:18px;line-height:1.2;flex:none;}
+.lead-note b{font-weight:700;}
+.lead-note span{color:#7A5A1A;font-size:11px;}
+body.has-lead-note .cart-fab{bottom:calc(var(--lead-h,84px) + 12px);}
+body.has-lead-note{padding-bottom:var(--lead-h,84px);}
 
 
 #browseContent{flex:1;padding:14px 14px 100px;}
@@ -71,6 +77,8 @@ input,select{font-family:var(--font-ui);}
 .product-img img:not(.loaded){display:none;}
 .product-img .ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;}
 .bu-tag{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:20px;letter-spacing:.02em;}
+.st-tag{position:absolute;top:8px;right:8px;font-size:10px;font-weight:800;letter-spacing:.02em;padding:2px 8px;border-radius:20px;color:#fff;z-index:1;}
+.st-tag.expired{background:#B02A21;}.st-tag.obsolete{background:#8A5A00;}
 .product-body{padding:9px 10px 10px;display:flex;flex-direction:column;gap:4px;flex:1;}
 .product-code{font-weight:700;font-size:12.5px;}
 .product-desc{font-size:11px;color:var(--ink-soft);line-height:1.3;min-height:2.2em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
@@ -114,11 +122,6 @@ input,select{font-family:var(--font-ui);}
 .cart-empty{padding:60px 20px;text-align:center;color:var(--ink-faint);}
 
 .checkout-summary{background:var(--primary-tint);color:var(--primary-ink);border-radius:var(--radius-sm);padding:11px 13px;font-size:12px;margin-bottom:14px;line-height:1.6;}
-.checkout-section{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);}
-.checkout-section .field{margin-bottom:12px;}
-.checkout-section label{display:block;font-size:11.5px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;letter-spacing:.01em;}
-.checkout-section input{width:100%;border:1.5px solid var(--line);background:var(--surface-alt);color:var(--ink);border-radius:var(--radius-sm);padding:12px 13px;font-size:15px;}
-.checkout-section input:focus{outline:none;border-color:var(--primary);}
 
 .cart-footer{padding:14px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface);}
 .btn-submit{width:100%;background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);padding:15px;font-size:15px;font-weight:700;box-shadow:var(--shadow);}
@@ -236,6 +239,12 @@ h1,h2,h3{font-family:var(--font-display);}
       <div style="color:var(--ink-faint);font-size:13px;">Loading data...</div>
     </div>
   </div>
+<div class="lead-note" id="openingNote" style="display:none;" role="note">
+  <div class="ln-ico">📅</div>
+  <div class="ln-txt"><b>Store Opening / Reopening — request early</b>
+    <div>• <b>Near</b> the warehouse: at least <b>1 week</b> before opening<br>• <b>Far</b> from the warehouse: at least <b>2 weeks</b> before opening</div>
+    <span>This gives RMAS enough time to prepare and deliver the POSM.</span></div>
+</div>
   <button class="cart-fab hidden" id="cartFab">🛒 <span id="cartFabLabel">Cart</span> <span class="badge" id="cartBadge">0</span></button>
 </div>
 
@@ -343,7 +352,8 @@ function storesForTs(tsName){ return STORES_BY_TS.get(tsName) || []; }
 
 async function loadFormData(){
   const data = await apiGet({action:'getFormData'});
-  POSM = (data.posmMaster||[]).filter(p=>p.status==='active');
+  // Active POSM, plus Expired / Obsolete ones while they still have stock (the grid only lists POSM with stock).
+  POSM = (data.posmMaster||[]).filter(p=>p.status==='active' || p.status==='expired' || p.status==='obsolete');
   POSM.forEach(p=>{ p.model = String(p.model==null?'':p.model).trim(); p._q = (p.code+' '+(p.desc||'')+' '+p.model).toLowerCase(); });
   POSM_BY_CODE = new Map(POSM.map(p=>[p.code, p]));
   STOCK = new Map();
@@ -451,6 +461,7 @@ function renderFilterBar(){
   repopulateWarehouse(); repopulateTs(); resetStorePicker();
   fillSelect($('purposeSelect'), '— Select Purpose —', PURPOSE_OPTIONS, selectedPurpose);
   $('purposeOtherWrap').style.display = selectedPurpose==='Others' ? '' : 'none';
+  syncOpeningNote();
   $('purposeOtherInput').value = purposeOtherText;
   $('buChips').innerHTML = BU_ORDER.map(bu=>`<button class="bu-chip ${bu===currentBU?'active':''}" data-bu="${bu}" title="${esc(buLabel(bu))}">${bu}</button>`).join('');
   $('searchInput').value = searchQuery;
@@ -553,14 +564,14 @@ function renderBrowse(keepScroll){
       const avail = qtyFor(selectedWarehouseId, p.code), inCart = cartQtyFor(p.code), img = imageCache[p.code];
       return `<div class="product-card" data-code="${esc(p.code)}">
         <div class="product-img">
-          <span class="bu-tag">${esc(p.bu)}</span>
+          <span class="bu-tag">${esc(p.bu)}</span>${p.status!=='active' ? `<span class="st-tag ${esc(p.status)}">${p.status==='expired'?'Expired':'Obsolete'}</span>` : ''}
           ${img ? `<img class="loaded" src="${img}" alt="">` : `<img alt=""><div class="ph" style="background:${buColor(p.bu)}">${esc(initialsOf(p.code))}</div>`}
         </div>
         <div class="product-body">
           <div class="product-code">${esc(p.code)}</div>
           <div class="product-desc">${esc(p.desc)}</div>
           ${p.model ? `<div class="product-model">Model: ${esc(p.model)}</div>` : ''}
-          <div class="product-avail">Available: ${avail.toLocaleString()}</div>
+          <div class="product-avail">Available to request: ${avail.toLocaleString()}</div>
           <div class="card-qty-row"><div class="qty-stepper sm">
             <button type="button" data-step="-1" aria-label="Less">&minus;</button>
             <input type="number" inputmode="numeric" min="1" max="${avail}" value="1" data-cardqty aria-label="Quantity">
@@ -639,6 +650,13 @@ function checkoutProblem(){
   if(!selectedPurpose || (selectedPurpose==='Others' && !purposeOtherText.trim())) return 'Please select a purpose.';
   return '';
 }
+// Store Opening / Reopening lead-time note: always on screen once the form is loaded.
+function syncOpeningNote(){
+  const n = $('openingNote'); if(!n) return;
+  n.style.display = '';
+  document.body.classList.add('has-lead-note');
+  document.body.style.setProperty('--lead-h', n.offsetHeight + 'px');
+}
 function updateCheckoutState(){
   const btn = $('cartSubmitBtn'), problem = checkoutProblem();
   btn.disabled = !!problem;
@@ -660,6 +678,13 @@ $('cartSubmitBtn').addEventListener('click', async ()=>{
     await apiPost('newRequestBatch', Object.assign({dateCreated: created, dueDate: addDays(created,5), createdBy: order.ts}, order));
     renderSuccess(order);
   }catch(e){
+    if(/not enough stock left/i.test(e.message)){
+      // Another Trade Supervisor requested first — reload what is still free and show it in the cart.
+      try{ await loadFormData(); renderBrowse(true); renderCart(); }catch(_){}
+      updateCheckoutState();
+      alert(e.message + '\n\nThe cart now shows what is still available.');
+      return;
+    }
     updateCheckoutState();
     alert(isKeyError(e.message)
       ? 'This Request Form link is out of date. Please open the latest link from your Admin (it ends with ?key=…) and submit again.'
@@ -793,7 +818,6 @@ input,select,textarea{font-family:var(--font-ui);}
 .group-foot{padding:10px 13px;background:var(--surface-alt);}
 .btn{width:100%;border:none;border-radius:var(--radius-sm);padding:12px;font-size:14px;font-weight:700;background:var(--primary);color:#fff;}
 .btn:disabled{opacity:.45;}
-.btn.ghost{background:var(--surface);color:var(--primary-ink);border:1.5px solid var(--primary);}
 .empty{padding:50px 20px;text-align:center;color:var(--ink-faint);font-size:13px;}
 .center{padding:60px 24px;text-align:center;}
 .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--primary);border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite;}
@@ -923,6 +947,15 @@ function pkReadExif(buf){
   }catch(e){}
   return out;
 }
+// Real-time photos only: the photo must have been taken just now with the camera (no old / gallery photos).
+const PK_LIVE_MIN = 10;
+const PK_MAX_PHOTOS = Infinity; // no limit on proof photos per upload
+function pkCheckLive(info){
+  const now = Date.now(), lim = PK_LIVE_MIN*60000, lm = Number(info.lastModified)||0;
+  let t = 0; if(info.takenAt){ const d = new Date(String(info.takenAt)); if(!isNaN(d)) t = d.getTime(); }
+  if((lm && now - lm > lim) || (t && now - t > lim))
+    throw new Error('Real-time photo only — this photo was not taken just now. Please tap "Take photo" and take a new picture at the store.');
+}
 // Keep each photo small in memory (max 1400px) so TS can take many photos without the phone running out of memory.
 async function pkShrink(bmp){
   const W = bmp.width||bmp.naturalWidth, H = bmp.height||bmp.naturalHeight, s = Math.min(1, 1400/Math.max(W,H));
@@ -953,15 +986,6 @@ function pkFmtStamp(d){
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 // Reads a picked file once (fingerprints + camera date + preview).
-// Real-time photos only: the photo must have been taken just now with the camera (no old / gallery photos).
-const PK_LIVE_MIN = 10;
-const PK_MAX_PHOTOS = Infinity; // no limit on proof photos per upload
-function pkCheckLive(info){
-  const now = Date.now(), lim = PK_LIVE_MIN*60000, lm = Number(info.lastModified)||0;
-  let t = 0; if(info.takenAt){ const d = new Date(String(info.takenAt)); if(!isNaN(d)) t = d.getTime(); }
-  if((lm && now - lm > lim) || (t && now - t > lim))
-    throw new Error('Real-time photo only — this photo was not taken just now. Please tap "Take photo" and take a new picture at the store.');
-}
 async function pkInspect(file){
   const buf = await file.arrayBuffer();
   const hash = await pkSha256(buf);
@@ -1166,7 +1190,6 @@ async function addPhoto(file, gallery){
     const info = await pkInspect(file);
     info.gallery = gallery;
     pkCheckLive(info);
-    if(upload.infos.length >= PK_MAX_PHOTOS) throw new Error('Maximum of '+PK_MAX_PHOTOS+' photos only.');
     if(upload.infos.some(x=>x.hash===info.hash)) throw new Error('You already added this same photo.');
     upload.infos.push(info); renderUpload();
   }catch(e){
