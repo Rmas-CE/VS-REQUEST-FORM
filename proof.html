@@ -195,6 +195,15 @@ function pkReadExif(buf){
   }catch(e){}
   return out;
 }
+// Keep each photo small in memory (max 1400px) so TS can take many photos without the phone running out of memory.
+async function pkShrink(bmp){
+  const W = bmp.width||bmp.naturalWidth, H = bmp.height||bmp.naturalHeight, s = Math.min(1, 1400/Math.max(W,H));
+  if(s >= 1) return bmp;
+  const c = document.createElement('canvas'); c.width = Math.round(W*s); c.height = Math.round(H*s);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  try{ if(bmp.close) bmp.close(); }catch(e){}
+  return c;
+}
 async function pkLoadBitmap(file){
   if(window.createImageBitmap){ try{ return await createImageBitmap(file, {imageOrientation:'from-image'}); }catch(e){} }
   return await new Promise((res, rej)=>{ const url = URL.createObjectURL(file); const im = new Image(); im.onload = ()=>{ res(im); }; im.onerror = ()=>rej(new Error('This file is not a photo the browser can open.')); im.src = url; });
@@ -216,11 +225,20 @@ function pkFmtStamp(d){
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 // Reads a picked file once (fingerprints + camera date + preview).
+// Real-time photos only: the photo must have been taken just now with the camera (no old / gallery photos).
+const PK_LIVE_MIN = 10;
+const PK_MAX_PHOTOS = Infinity; // no limit on proof photos per upload
+function pkCheckLive(info){
+  const now = Date.now(), lim = PK_LIVE_MIN*60000, lm = Number(info.lastModified)||0;
+  let t = 0; if(info.takenAt){ const d = new Date(String(info.takenAt)); if(!isNaN(d)) t = d.getTime(); }
+  if((lm && now - lm > lim) || (t && now - t > lim))
+    throw new Error('Real-time photo only — this photo was not taken just now. Please tap "Take photo" and take a new picture at the store.');
+}
 async function pkInspect(file){
   const buf = await file.arrayBuffer();
   const hash = await pkSha256(buf);
   const exif = pkReadExif(buf);
-  const bmp = await pkLoadBitmap(file);
+  const bmp = await pkShrink(await pkLoadBitmap(file));
   const ahash = pkDHash(bmp);
   const c = document.createElement('canvas'); const s = Math.min(1, 240 / Math.max(bmp.width, bmp.height));
   c.width = Math.round(bmp.width*s); c.height = Math.round(bmp.height*s); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
@@ -282,7 +300,7 @@ async function pkBuildPayload(infos, gps, stamp, deliveredDate){
 
 
 /* ============================= STATE ============================= */
-let REQS = [], TS = [], META = {proofGraceDays:3, today:new Date().toISOString().slice(0,10)};
+let REQS = [], TS = [], META = {proofGraceDays:10, today:new Date().toISOString().slice(0,10)};
 let tab = 'need', fRegion = 'all', fTs = 'all', fSearch = '';
 const picked = {};   // requestId -> true (checked in the list)
 let upload = null;   // {items, infos:[], gps, gpsState}
@@ -297,7 +315,7 @@ async function load(){
   const d = await res.json();
   if(d.error) throw new Error(d.error);
   REQS = d.requests || []; TS = d.tradeSupervisors || [];
-  META = {proofGraceDays: d.proofGraceDays || 3, today: d.today || META.today, proofStartDate: d.proofStartDate || ''};
+  META = {proofGraceDays: 10, today: d.today || META.today, proofStartDate: d.proofStartDate || ''};
 }
 async function post(action, payload){
   const body = Object.assign({action}, payload, FORM_KEY ? {formKey: FORM_KEY} : {});
@@ -348,7 +366,7 @@ function renderList(){
           if(r.proofStatus==='rejected') badge = `<span class="badge b-late">Rejected — upload again</span>`;
           else if(r.proofStatus==='for_review') badge = `<span class="badge b-review">Waiting for Admin review</span>`;
           else if(r.proofStatus==='verified') badge = `<span class="badge b-ok">✓ Verified</span>`;
-          else { const d = daysSince(r.dateDelivered); badge = `<span class="badge ${d>META.proofGraceDays?'b-late':'b-need'}">${d===0?'Delivered today':d+' day'+(d!==1?'s':'')+' since delivery'}</span>`; }
+          else { const d = daysSince(r.dateDelivered); const g = META.proofGraceDays, left = g - d; badge = `<span class="badge ${d>g?'b-late':'b-need'}">${left<0 ? (-left)+' day'+(left!==-1?'s':'')+' overdue — upload now' : (left===0 ? 'Due today' : left+' day'+(left!==1?'s':'')+' left to upload')}</span>`; }
           return `<label class="item">${tab==='need' ? `<input type="checkbox" data-pick="${esc(r.id)}" ${picked[r.id]?'checked':''}>` : ''}
             <div class="info"><div class="code">${esc(r.posmCode)} × ${r.qty}</div><div class="desc">${esc(r.desc)}</div>
               <div class="sub">${esc(r.id)} · Delivered ${fmtDate(r.dateDelivered)}${r.proofAt && tab==='done' ? ' · Uploaded '+fmtDate(r.proofAt)+(r.proofBy?' by '+esc(r.proofBy):'') : ''}</div>
@@ -394,13 +412,12 @@ function renderUpload(){
     <div class="card"><h3>${esc(first.store)}</h3>
       ${u.items.map(r=>`<div class="sel-item"><b>${esc(r.posmCode)} × ${r.qty}</b> — ${esc(r.desc)}<div style="font-size:11px;color:var(--ink-faint);">${esc(r.id)} · Delivered ${fmtDate(r.dateDelivered)}</div></div>`).join('')}
     </div>
-    <div class="card"><h3>Photos of the deployed POSM (1–3)</h3>
-      <div class="shots">${[0,1,2].map(i=>{ const p = u.infos[i];
+    <div class="card"><h3>Photos of the deployed POSM — ${u.infos.length} taken</h3>
+      <div class="shots">${Array.from({length: Math.min(PK_MAX_PHOTOS, u.infos.length+1)}, (_,i)=>i).map(i=>{ const p = u.infos[i];
         return p ? `<div class="shot"><img src="${p.thumb}" alt=""><button class="x" data-rm="${i}" aria-label="Remove">×</button><span class="tag">${p.gallery?'Gallery':'Camera'}</span></div>` : `<div class="shot">Photo ${i+1}</div>`; }).join('')}</div>
-      ${u.infos.length<3 ? `<div class="pick">
-        <label class="cam">📷 Take photo<input type="file" accept="image/*" capture="environment" id="inCam"></label>
-        <label class="gal">From gallery<input type="file" accept="image/*" id="inGal"></label></div>` : ''}
-      <div style="font-size:11px;color:var(--ink-faint);margin-top:8px;">Take the photo at the store, showing the POSM installed. The request #, store, date/time and GPS will be printed on the photo.</div>
+      ${u.infos.length<PK_MAX_PHOTOS ? `<div class="pick">
+        <label class="cam">📷 Take photo<input type="file" accept="image/*" capture="environment" id="inCam"></label></div>` : ''}
+      <div style="font-size:11px;color:var(--ink-faint);margin-top:8px;">Camera only — take a real-time photo at the store, showing the POSM installed. Gallery / old photos are not accepted. The request #, store, date/time and GPS will be printed on the photo.</div>
       ${flags.map(f=>`<div class="warn">⚠️ <div>${esc(pkFlagLabel(f))} — the Admin will see this.</div></div>`).join('')}
       <div id="pickErr"></div>
     </div>
@@ -416,7 +433,7 @@ function renderUpload(){
   sb.disabled = u.busy || !u.infos.length || u.gpsState==='loading';
   sb.textContent = u.busy ? 'Uploading...' : (u.gpsState==='loading' && u.infos.length ? 'Waiting for GPS...' : 'Submit Proof');
   const wire = (id, gallery)=>{ const inp = document.getElementById(id); if(inp) inp.addEventListener('change', ()=>addPhoto(inp.files && inp.files[0], gallery)); };
-  wire('inCam', false); wire('inGal', true);
+  wire('inCam', false);
   document.querySelectorAll('[data-rm]').forEach(b=>b.addEventListener('click', ()=>{ u.infos.splice(Number(b.dataset.rm),1); renderUpload(); }));
   const rt = document.getElementById('gpsRetry'); if(rt) rt.addEventListener('click', askGps);
 }
@@ -425,6 +442,8 @@ async function addPhoto(file, gallery){
   try{
     const info = await pkInspect(file);
     info.gallery = gallery;
+    pkCheckLive(info);
+    if(upload.infos.length >= PK_MAX_PHOTOS) throw new Error('Maximum of '+PK_MAX_PHOTOS+' photos only.');
     if(upload.infos.some(x=>x.hash===info.hash)) throw new Error('You already added this same photo.');
     upload.infos.push(info); renderUpload();
   }catch(e){
