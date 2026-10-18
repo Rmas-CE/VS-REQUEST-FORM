@@ -675,7 +675,8 @@ $('cartSubmitBtn').addEventListener('click', async ()=>{
     items: cart.map(c=>({id:uid('REQ'), posmCode:c.code, qty:c.qty}))
   };
   try{
-    await apiPost('newRequestBatch', Object.assign({dateCreated: created, dueDate: addDays(created,5), createdBy: order.ts}, order));
+    // No due date while For Sorting — the 7-day delivery due date starts when RMAS marks it For Delivery.
+    await apiPost('newRequestBatch', Object.assign({dateCreated: created, dueDate: '', createdBy: order.ts}, order));
     renderSuccess(order);
   }catch(e){
     if(/not enough stock left/i.test(e.message)){
