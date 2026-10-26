@@ -315,6 +315,13 @@ async function apiPost(action, payload){
 const WAREHOUSE_REGION = {"PT NGMA":"NGMA","AMII SGMA":"SGMA","PT MANGALDAN":"NORTH LUZON","PT DAGUPAN":"NORTH LUZON","PT PAMPANGA":"CENTRAL LUZON","AMII DASMA":"SOUTH LUZON","AMII BATANGAS":"SOUTH LUZON","AMII NAGA":"SOUTH LUZON","AMII SOUTH MINDANAO":"SOUTH MINDANAO","AMII NORTH MINDANAO":"NORTH MINDANAO","PT CEBU":"CENTRAL VISAYAS","PT ILOILO":"WESTERN VISAYAS"};
 const WAREHOUSES = Object.keys(WAREHOUSE_REGION).map(name=>({id:name, name, region:WAREHOUSE_REGION[name]}));
 const REGIONS = [...new Set(Object.values(WAREHOUSE_REGION))].sort();
+/* Paired regions share warehouses: picking either region lists both regions' warehouses.
+   The region itself (and its TS/store list) stays separate. */
+const SHARED_WAREHOUSE_REGIONS = [['WESTERN VISAYAS','CENTRAL VISAYAS'], ['NGMA','SGMA']];
+function warehousesForRegion(region){
+  const group = SHARED_WAREHOUSE_REGIONS.find(g=>g.includes(region)) || [region];
+  return WAREHOUSES.filter(w=>group.includes(w.region)).map(w=>w.id);
+}
 const BU_LABELS = {AV:'AV / TV / Audio', HA:'Home Appliances', AC:'Air Conditioner'};
 const BU_ORDER = ['AV','HA','AC'];   // BU selector shows exactly these, in this order
 const BU_PALETTE = ['#15239E','#7B3FE4','#0A87C4','#B4780F','#1B8A5A','#C43B3B','#0D1970','#8C4B2A'];
@@ -436,7 +443,7 @@ function repopulateWarehouse(){
   const sel = $('whSelect');
   sel.disabled = !selectedRegion;
   if(!selectedRegion) return fillSelect(sel, '— Select Region first —', [], '');
-  fillSelect(sel, '— Select Warehouse —', WAREHOUSES.filter(w=>w.region===selectedRegion).map(w=>w.id), selectedWarehouseId);
+  fillSelect(sel, '— Select Warehouse —', warehousesForRegion(selectedRegion), selectedWarehouseId);
 }
 function repopulateTs(){
   const sel = $('tsSelect');
