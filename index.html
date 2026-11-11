@@ -151,7 +151,7 @@ html{color-scheme:light}
 
 /* ===== VaultSync suite bar — shared by every VaultSync tool =====
    --vs-sticky is the space other sticky headers must leave for the bar:
-   44px on desktop (bar stays pinned), 0 on phones (bar scrolls away). */
+   44px on every screen size (bar always pinned). */
 :root{--vs-sticky:44px}
 .vs-suite{position:sticky;top:0;z-index:35;height:44px;display:flex;align-items:center;gap:12px;padding:0 16px;
   background:linear-gradient(100deg,#000 0%,#0B1B5C 50%,#1428A0 100%);color:#fff;font:600 13px/1 'Inter',system-ui,-apple-system,sans-serif}
@@ -165,7 +165,7 @@ html{color-scheme:light}
 .vs-suite nav a:hover{color:#fff;background:rgba(255,255,255,.1)}
 .vs-suite nav a[aria-current="page"]{color:#fff;background:rgba(255,255,255,.16)}
 .vs-suite :focus-visible{outline:2px solid #7FD8FF;outline-offset:1px}
-@media (max-width:900px){ :root{--vs-sticky:0px} .vs-suite{position:relative} }
+/* Phones: keep the bar pinned too (only bar + title row are frozen; filters scroll away) */
 @media (max-width:600px){ .vs-suite{padding:0 10px;gap:6px} .vs-suite .vs-home span{display:none} .vs-suite nav a{padding:9px 8px} }
 @media print{ .vs-suite{display:none!important} }
 /* ===== Install as an app ===== */
@@ -192,7 +192,15 @@ html{color-scheme:light}
 
 [hidden]{display:none !important}
 .topbar{top:var(--vs-sticky);}
-.filter-bar{top:calc(57px + var(--vs-sticky));}
+.filter-bar{position:relative;top:auto;z-index:19;}
+/* Compact frozen header on phones */
+@media (max-width:600px){
+  #app>.topbar{padding:9px 12px;gap:9px}
+  #app>.topbar h1{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #app>.topbar>div{min-width:0}
+  #app>.topbar .sub{display:none}
+  #proofLink .pl-long{display:none}
+}
 h1,h2,h3{font-family:var(--font-display);}
 .brand-mark{border-radius:8px}
 </style>
@@ -212,7 +220,7 @@ h1,h2,h3{font-family:var(--font-display);}
       <h1>POSM Request Form</h1>
       <div class="sub">VaultSync — quick POSM requests</div>
     </div>
-    <a id="proofLink" href="#proof" style="margin-left:auto;font-size:12px;font-weight:700;color:var(--primary);text-decoration:none;white-space:nowrap;border:1.5px solid var(--line);border-radius:20px;padding:6px 11px;">📷 Proof of Deployment</a>
+    <a id="proofLink" href="#proof" style="margin-left:auto;font-size:12px;font-weight:700;color:var(--primary);text-decoration:none;white-space:nowrap;border:1.5px solid var(--line);border-radius:20px;padding:6px 11px;">📷 Proof<span class="pl-long"> of Deployment</span></a>
     <span class="sync-dot" id="syncDot" style="margin-left:8px;"></span>
   </div>
   <div class="filter-bar" id="filterBar" style="display:none;">
@@ -796,7 +804,7 @@ input,select,textarea{font-family:var(--font-ui);}
 .topbar h1{font-size:15.5px;font-weight:700;}
 .topbar .sub{font-size:11px;color:var(--ink-faint);margin-top:1px;}
 .topbar a{margin-left:auto;font-size:12px;font-weight:600;color:var(--primary);text-decoration:none;white-space:nowrap;}
-.filters{position:sticky;top:calc(57px + var(--vs-sticky,0px));z-index:19;background:var(--surface);border-bottom:1px solid var(--line);padding:10px 14px 12px;}
+.filters{position:relative;z-index:19;background:var(--surface);border-bottom:1px solid var(--line);padding:10px 14px 12px;}
 .row{display:flex;gap:8px;margin-bottom:8px;}
 .row select, .search{flex:1;min-width:0;border:1.5px solid var(--line);background:var(--surface-alt);color:var(--ink);border-radius:var(--radius-sm);padding:9px 10px;font-size:13px;}
 .search{width:100%;font-size:14px;padding:10px 12px;}
